@@ -24,3 +24,4 @@ job-tracker-app-deploy/
 *.njsproj
 *.sln
 *.sw?
+.vercel
