@@ -14,6 +14,7 @@ const getPreferredTheme = () => {
 
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [fetchJobs, setFetchJobs] = useState<Job[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>(getPreferredTheme);
   const [searchQuery, setSearchQuery] = useState('');
   const [isFetchingLeads, setIsFetchingLeads] = useState(false);
@@ -42,13 +43,15 @@ export default function App() {
   }, [jobs]);
 
   const filteredJobs = useMemo(() => {
-    if (!searchQuery) return jobs;
+    const allJobs = [...fetchJobs, ...jobs];
+    if (!searchQuery) return allJobs;
     const lowerQ = searchQuery.toLowerCase();
-    return jobs.filter(j => 
+    return allJobs.filter(j => 
+      j.status === 'Fetch Jobs' ||
       j.companyName.toLowerCase().includes(lowerQ) ||
       j.jobTitle.toLowerCase().includes(lowerQ)
     );
-  }, [jobs, searchQuery]);
+  }, [fetchJobs, jobs, searchQuery]);
 
   const fetchFreshJobs = async () => {
     setIsFetchingLeads(true);
@@ -67,6 +70,14 @@ export default function App() {
       }
 
       const leadJobs = ((payload.leads || []) as JobLead[]).map(mapLeadToFetchJob);
+      setFetchJobs(() => {
+        const savedSourceIds = new Set(
+          jobs
+            .map((job) => job.sourceId)
+            .filter((id): id is string => Boolean(id))
+        );
+        return leadJobs.filter((lead) => !savedSourceIds.has(lead.sourceId || ''));
+      });
       setJobs((currentJobs) => {
         const savedSourceIds = new Set(
           currentJobs
@@ -74,13 +85,7 @@ export default function App() {
             .map((job) => job.sourceId)
             .filter((id): id is string => Boolean(id))
         );
-        const existingLeadIds = new Set(currentJobs.filter((job) => job.isLead).map((job) => job.id));
-        const currentSavedJobs = currentJobs.filter((job) => !job.isLead || existingLeadIds.has(job.id));
-        const freshLeadJobs = leadJobs.filter((lead) => !savedSourceIds.has(lead.sourceId || ''));
-        return [
-          ...freshLeadJobs,
-          ...currentSavedJobs.filter((job) => !job.isLead),
-        ];
+        return currentJobs.filter((job) => !job.isLead && !savedSourceIds.has(job.id));
       });
     } catch (error) {
       setLeadError(error instanceof Error ? error.message : 'Unable to fetch fresh jobs.');
@@ -157,6 +162,7 @@ export default function App() {
       ...prev.filter((item) => item.id !== leadJob.id && item.id !== existingJob?.id),
       job,
     ]);
+    setFetchJobs((prev) => prev.filter((item) => item.id !== leadJob.id));
   };
 
   const handleWishlistLead = (leadJob: Job) => {
@@ -286,7 +292,16 @@ export default function App() {
       <main className="flex-1 overflow-hidden p-6">
         <KanbanBoard 
           jobs={filteredJobs} 
-          setJobs={setJobs} 
+          setJobs={(updater) => {
+            if (typeof updater === 'function') {
+              const nextJobs = updater(filteredJobs);
+              setFetchJobs(nextJobs.filter((job) => job.isLead || job.status === 'Fetch Jobs'));
+              setJobs(nextJobs.filter((job) => !job.isLead && job.status !== 'Fetch Jobs'));
+            } else {
+              setFetchJobs(updater.filter((job) => job.isLead || job.status === 'Fetch Jobs'));
+              setJobs(updater.filter((job) => !job.isLead && job.status !== 'Fetch Jobs'));
+            }
+          }} 
           onUpdateJob={handleUpdateJobStateDirect}
           onConvertLead={handleConvertLead}
           onWishlistLead={handleWishlistLead}
