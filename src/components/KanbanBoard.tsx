@@ -15,17 +15,33 @@ import type { Job, JobStatus } from '../types';
 import { KanbanColumn } from './KanbanColumn';
 import { JobCard } from './JobCard';
 
-const COLUMNS: JobStatus[] = ['Wishlist', 'Applied', 'Follow-up', 'Interview', 'Offer', 'Rejected'];
+const COLUMNS: JobStatus[] = ['Fetch Jobs', 'Wishlist', 'Applied', 'Follow-up', 'Interview', 'Offer', 'Rejected'];
 
 interface KanbanBoardProps {
   jobs: Job[];
   setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   onUpdateJob: (job: Job) => Promise<void>;
+  onConvertLead: (job: Job) => Promise<void>;
+  onWishlistLead: (job: Job) => void;
   onEdit: (job: Job) => void;
   onDelete: (id: string) => void;
+  onFetchJobs: () => void;
+  isFetchingLeads: boolean;
+  leadError: string | null;
 }
 
-export function KanbanBoard({ jobs, setJobs, onUpdateJob, onEdit, onDelete }: KanbanBoardProps) {
+export function KanbanBoard({
+  jobs,
+  setJobs,
+  onUpdateJob,
+  onConvertLead,
+  onWishlistLead,
+  onEdit,
+  onDelete,
+  onFetchJobs,
+  isFetchingLeads,
+  leadError,
+}: KanbanBoardProps) {
   const [activeJob, setActiveJob] = useState<Job | null>(null);
 
   const sensors = useSensors(
@@ -64,8 +80,11 @@ export function KanbanBoard({ jobs, setJobs, onUpdateJob, onEdit, onDelete }: Ka
       const activeIndex = jobs.findIndex((j) => j.id === activeId);
       const activeJob = jobs[activeIndex];
 
+      if (activeIndex === -1) return jobs;
+
       if (isOverTask) {
         const overIndex = jobs.findIndex((j) => j.id === overId);
+        if (overIndex === -1) return jobs;
         const overJob = jobs[overIndex];
         
         if (activeJob.status !== overJob.status) {
@@ -104,7 +123,11 @@ export function KanbanBoard({ jobs, setJobs, onUpdateJob, onEdit, onDelete }: Ka
     // Persist final status to IndexedDB
     const finalJob = jobs.find((j) => j.id === activeId);
     if (finalJob) {
-      await onUpdateJob(finalJob);
+      if (finalJob.isLead && finalJob.status !== 'Fetch Jobs') {
+        await onConvertLead(finalJob);
+      } else if (!finalJob.isLead) {
+        await onUpdateJob(finalJob);
+      }
     }
   };
 
@@ -124,13 +147,17 @@ export function KanbanBoard({ jobs, setJobs, onUpdateJob, onEdit, onDelete }: Ka
             jobs={jobs.filter((j) => j.status === col)}
             onEdit={onEdit}
             onDelete={onDelete}
+            onWishlistLead={onWishlistLead}
+            onFetchJobs={col === 'Fetch Jobs' ? onFetchJobs : undefined}
+            isFetchingLeads={isFetchingLeads}
+            leadError={leadError}
           />
         ))}
       </div>
 
       <DragOverlay dropAnimation={{ sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.5' } } }) }}>
         {activeJob ? (
-          <JobCard job={activeJob} onEdit={onEdit} onDelete={onDelete} />
+          <JobCard job={activeJob} onEdit={onEdit} onDelete={onDelete} onWishlistLead={onWishlistLead} />
         ) : null}
       </DragOverlay>
     </DndContext>

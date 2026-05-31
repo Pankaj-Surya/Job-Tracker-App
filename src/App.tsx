@@ -3,7 +3,6 @@ import type { Job, JobLead } from './types';
 import { addJob, updateJob, deleteJob, getAllJobs, clearAllJobs } from './db';
 import { KanbanBoard } from './components/KanbanBoard';
 import { JobModal } from './components/JobModal';
-import { FreshJobsPanel } from './components/FreshJobsPanel';
 import { Plus, Search, Moon, Sun, Download, Upload } from 'lucide-react';
 
 const getPreferredTheme = () => {
@@ -17,7 +16,6 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>(getPreferredTheme);
   const [searchQuery, setSearchQuery] = useState('');
-  const [jobLeads, setJobLeads] = useState<JobLead[]>([]);
   const [isFetchingLeads, setIsFetchingLeads] = useState(false);
   const [leadError, setLeadError] = useState<string | null>(null);
   
@@ -52,10 +50,6 @@ export default function App() {
     );
   }, [jobs, searchQuery]);
 
-  const savedSourceIds = useMemo(() => {
-    return new Set(jobs.map((job) => job.sourceId).filter((id): id is string => Boolean(id)));
-  }, [jobs]);
-
   const fetchFreshJobs = async () => {
     setIsFetchingLeads(true);
     setLeadError(null);
@@ -72,13 +66,52 @@ export default function App() {
         throw new Error(payload.error || 'Unable to fetch fresh jobs.');
       }
 
-      setJobLeads(payload.leads || []);
+      const leadJobs = ((payload.leads || []) as JobLead[]).map(mapLeadToFetchJob);
+      setJobs((currentJobs) => {
+        const savedSourceIds = new Set(
+          currentJobs
+            .filter((job) => !job.isLead)
+            .map((job) => job.sourceId)
+            .filter((id): id is string => Boolean(id))
+        );
+        const existingLeadIds = new Set(currentJobs.filter((job) => job.isLead).map((job) => job.id));
+        const currentSavedJobs = currentJobs.filter((job) => !job.isLead || existingLeadIds.has(job.id));
+        const freshLeadJobs = leadJobs.filter((lead) => !savedSourceIds.has(lead.sourceId || ''));
+        return [
+          ...freshLeadJobs,
+          ...currentSavedJobs.filter((job) => !job.isLead),
+        ];
+      });
     } catch (error) {
       setLeadError(error instanceof Error ? error.message : 'Unable to fetch fresh jobs.');
     } finally {
       setIsFetchingLeads(false);
     }
   };
+
+  const mapLeadToFetchJob = (lead: JobLead): Job => ({
+    id: lead.id,
+    companyName: lead.companyName,
+    jobTitle: lead.jobTitle,
+    jobUrl: lead.jobUrl,
+    dateApplied: Date.now(),
+    createdAt: lead.createdAt,
+    salaryRange: lead.salaryRange,
+    notes: [
+      lead.resumeHint,
+      ...lead.fitReasons,
+      lead.location ? `Location: ${lead.location}` : '',
+    ].filter(Boolean).join('\n'),
+    status: 'Fetch Jobs',
+    source: 'adzuna',
+    sourceId: lead.sourceId,
+    isLead: true,
+    fitScore: lead.fitScore,
+    fitReasons: lead.fitReasons,
+    roleCategory: lead.roleCategory,
+    resumeHint: lead.resumeHint,
+    referralSearches: lead.referralSearches,
+  });
 
   const handleSaveJob = async (job: Job) => {
     const isEditing = jobs.some(j => j.id === job.id);
@@ -91,33 +124,43 @@ export default function App() {
     }
   };
 
-  const handleSaveLeadToWishlist = async (lead: JobLead) => {
-    const existingJob = jobs.find((job) => job.sourceId === lead.sourceId);
+  const handleConvertLead = async (leadJob: Job, targetStatus = leadJob.status) => {
+    const existingJob = jobs.find((job) => !job.isLead && job.sourceId === leadJob.sourceId);
     const job: Job = {
       ...(existingJob || {}),
-      id: existingJob?.id || lead.id,
-      companyName: lead.companyName,
-      jobTitle: lead.jobTitle,
-      jobUrl: lead.jobUrl,
+      id: existingJob?.id || leadJob.id,
+      companyName: leadJob.companyName,
+      jobTitle: leadJob.jobTitle,
+      jobUrl: leadJob.jobUrl,
       dateApplied: existingJob?.dateApplied || Date.now(),
-      createdAt: lead.createdAt,
-      salaryRange: lead.salaryRange,
-      notes: [
-        lead.resumeHint,
-        ...lead.fitReasons,
-        lead.location ? `Location: ${lead.location}` : '',
-      ].filter(Boolean).join('\n'),
-      status: 'Wishlist',
+      createdAt: leadJob.createdAt,
+      salaryRange: leadJob.salaryRange,
+      notes: leadJob.notes,
+      status: targetStatus === 'Fetch Jobs' ? 'Wishlist' : targetStatus,
       source: 'adzuna',
-      sourceId: lead.sourceId,
-      fitScore: lead.fitScore,
-      fitReasons: lead.fitReasons,
-      roleCategory: lead.roleCategory,
-      resumeHint: lead.resumeHint,
-      referralSearches: lead.referralSearches,
+      sourceId: leadJob.sourceId,
+      isLead: false,
+      fitScore: leadJob.fitScore,
+      fitReasons: leadJob.fitReasons,
+      roleCategory: leadJob.roleCategory,
+      resumeHint: leadJob.resumeHint,
+      referralSearches: leadJob.referralSearches,
     };
 
-    await handleSaveJob(job);
+    if (existingJob) {
+      await updateJob(job);
+    } else {
+      await addJob(job);
+    }
+
+    setJobs((prev) => [
+      ...prev.filter((item) => item.id !== leadJob.id && item.id !== existingJob?.id),
+      job,
+    ]);
+  };
+
+  const handleWishlistLead = (leadJob: Job) => {
+    void handleConvertLead(leadJob, 'Wishlist');
   };
 
   const handleUpdateJobStateDirect = async (job: Job) => {
@@ -223,15 +266,6 @@ export default function App() {
         </div>
       </header>
 
-      <FreshJobsPanel
-        leads={jobLeads}
-        isLoading={isFetchingLeads}
-        error={leadError}
-        savedSourceIds={savedSourceIds}
-        onFetch={fetchFreshJobs}
-        onSaveLead={handleSaveLeadToWishlist}
-      />
-      
       {/* Mobile Actions */}
       <div className="sm:hidden px-4 pt-4 flex gap-3">
          <div className="relative flex-1">
@@ -254,8 +288,13 @@ export default function App() {
           jobs={filteredJobs} 
           setJobs={setJobs} 
           onUpdateJob={handleUpdateJobStateDirect}
+          onConvertLead={handleConvertLead}
+          onWishlistLead={handleWishlistLead}
           onEdit={(job) => { setEditingJob(job); setIsModalOpen(true); }}
           onDelete={handleDeleteJob}
+          onFetchJobs={fetchFreshJobs}
+          isFetchingLeads={isFetchingLeads}
+          leadError={leadError}
         />
       </main>
 

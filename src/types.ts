@@ -1,4 +1,4 @@
-export type JobStatus = 'Wishlist' | 'Applied' | 'Follow-up' | 'Interview' | 'Offer' | 'Rejected';
+export type JobStatus = 'Fetch Jobs' | 'Wishlist' | 'Applied' | 'Follow-up' | 'Interview' | 'Offer' | 'Rejected';
 
 export interface ReferralSearch {
   label: string;
@@ -17,6 +17,7 @@ export interface Job {
   notes?: string;
   status: JobStatus;
   source?: 'manual' | 'adzuna';
+  isLead?: boolean;
   sourceId?: string;
   fitScore?: number;
   fitReasons?: string[];

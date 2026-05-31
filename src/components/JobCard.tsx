@@ -4,15 +4,17 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Job } from '../types';
 import { cn } from '../utils';
 import { formatDistanceToNow } from 'date-fns';
-import { DollarSign, Calendar, ExternalLink, FileText, Edit2, Trash2 } from 'lucide-react';
+import { DollarSign, Calendar, ExternalLink, FileText, Edit2, Trash2, Sparkles } from 'lucide-react';
 
 interface JobCardProps {
   job: Job;
   onEdit: (job: Job) => void;
   onDelete: (id: string) => void;
+  onWishlistLead?: (job: Job) => void;
 }
 
 const statusColors = {
+  'Fetch Jobs': 'border-l-emerald-400',
   Wishlist: 'border-l-gray-400',
   Applied: 'border-l-blue-400',
   'Follow-up': 'border-l-purple-400',
@@ -21,7 +23,7 @@ const statusColors = {
   Rejected: 'border-l-red-400',
 };
 
-export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
+export function JobCard({ job, onEdit, onDelete, onWishlistLead }: JobCardProps) {
   const {
     setNodeRef,
     attributes,
@@ -64,6 +66,11 @@ export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
     onEdit(job);
   };
 
+  const handleWishlistLead = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onWishlistLead?.(job);
+  };
+
   const handleLinkClick = (e: React.MouseEvent) => {
     e.stopPropagation();
   }
@@ -81,6 +88,7 @@ export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
     >
       <div className="flex justify-between items-start mb-2">
         <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-1 overflow-hidden">
+          {job.isLead && <Sparkles size={14} className="text-emerald-500 flex-shrink-0" />}
           <span className="truncate" title={job.companyName}>{job.companyName}</span>
           {job.jobUrl && (
             <a href={job.jobUrl} target="_blank" rel="noopener noreferrer" onClick={handleLinkClick} className="text-blue-500 hover:text-blue-700 ml-1 flex-shrink-0">
@@ -90,9 +98,11 @@ export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
         </div>
         
         <div className="flex flex-shrink-0">
-          <button onClick={handleEdit} className="p-1 text-gray-400 hover:text-blue-500 rounded">
-            <Edit2 size={14} />
-          </button>
+          {!job.isLead && (
+            <button onClick={handleEdit} className="p-1 text-gray-400 hover:text-blue-500 rounded">
+              <Edit2 size={14} />
+            </button>
+          )}
           <button onClick={handleDelete} className="p-1 text-gray-400 hover:text-red-500 rounded">
             <Trash2 size={14} />
           </button>
@@ -103,10 +113,19 @@ export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
         {job.jobTitle}
       </div>
 
+      {job.fitScore && (
+        <div className="mb-2 flex items-center gap-2 text-xs">
+          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            {job.fitScore}
+          </span>
+          {job.roleCategory && <span className="truncate text-gray-500 dark:text-gray-400">{job.roleCategory}</span>}
+        </div>
+      )}
+
       <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-1.5 truncate">
           <Calendar size={12} className="flex-shrink-0" />
-          <span>{formatDistanceToNow(job.dateApplied, { addSuffix: true })}</span>
+          <span>{formatDistanceToNow(job.createdAt || job.dateApplied, { addSuffix: true })}</span>
         </div>
         
         {job.salaryRange && (
@@ -123,6 +142,16 @@ export function JobCard({ job, onEdit, onDelete }: JobCardProps) {
           </div>
         )}
       </div>
+
+      {job.isLead && (
+        <button
+          type="button"
+          onClick={handleWishlistLead}
+          className="mt-3 w-full rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 dark:bg-white dark:text-gray-900"
+        >
+          Wishlist
+        </button>
+      )}
     </div>
   );
 }
