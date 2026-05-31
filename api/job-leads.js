@@ -4,9 +4,6 @@ const ROLE_QUERIES = [
   'SDET',
   'QA Engineer',
   'Test Automation Engineer',
-  'Test Lead',
-  'Test Architect',
-  'Quality Assurance Engineer',
 ];
 
 const TOP_PRODUCT_COMPANIES = [
@@ -230,6 +227,27 @@ async function fetchRole(role, country, appId, appKey) {
   return response.json();
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchRolesSafely(country, appId, appKey) {
+  const results = [];
+  const errors = [];
+
+  for (const role of ROLE_QUERIES) {
+    try {
+      results.push(await fetchRole(role, country, appId, appKey));
+      await wait(1200);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : `Unable to fetch ${role}`);
+      if (String(errors.at(-1)).includes('429')) break;
+    }
+  }
+
+  return { results, errors };
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'GET') {
     response.setHeader('Allow', 'GET');
@@ -249,9 +267,7 @@ export default async function handler(request, response) {
   }
 
   try {
-    const results = await Promise.all(
-      ROLE_QUERIES.map((role) => fetchRole(role, country, appId, appKey))
-    );
+    const { results, errors } = await fetchRolesSafely(country, appId, appKey);
 
     const weekAgo = Date.now() - 7 * ONE_DAY_MS;
     const seen = new Set();
@@ -267,11 +283,20 @@ export default async function handler(request, response) {
       .sort((a, b) => b.fitScore - a.fitScore || b.createdAt - a.createdAt)
       .slice(0, 10);
 
+    if (!leads.length && errors.length) {
+      response.status(errors.some((error) => error.includes('429')) ? 429 : 502).json({
+        error: errors[0],
+        leads: [],
+      });
+      return;
+    }
+
     response.status(200).json({
       generatedAt: new Date().toISOString(),
       source: 'Adzuna',
       attribution: 'Jobs by Adzuna',
       leads,
+      warnings: errors,
     });
   } catch (error) {
     response.status(502).json({

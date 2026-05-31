@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .env
+job-tracker-app-deploy/
 
 # Editor directories and files
 .vscode/*
